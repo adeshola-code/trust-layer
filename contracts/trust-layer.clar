@@ -82,3 +82,72 @@
     (ok true)
   )
 )
+
+;; CORE FUNCTIONS
+;; Register new identity
+(define-public (register-identity)
+  (let ((owner tx-sender))
+    (begin
+      (asserts! (var-get active) ERR-UNAUTHORIZED)
+      (asserts! (is-none (map-get? identities { owner: owner }))
+        ERR-IDENTITY-EXISTS
+      )
+
+      (map-set identities { owner: owner } {
+        reputation: DEFAULT-REPUTATION,
+        created-at: stacks-block-height,
+        last-updated: stacks-block-height,
+        last-decay: stacks-block-height,
+        active: true,
+      })
+
+      (var-set total-users (+ (var-get total-users) u1))
+      (ok DEFAULT-REPUTATION)
+    )
+  )
+)
+
+;; Execute trust action to earn reputation
+(define-public (execute-action (action (string-ascii 50)))
+  (let (
+      (owner tx-sender)
+      (profile (unwrap! (map-get? identities { owner: owner }) ERR-IDENTITY-NOT-FOUND))
+      (action-config (unwrap! (map-get? trust-actions { action: action }) ERR-INVALID-PARAMETERS))
+    )
+    (begin
+      (asserts! (var-get active) ERR-UNAUTHORIZED)
+      (asserts! (get active profile) ERR-UNAUTHORIZED)
+      (asserts! (get active action-config) ERR-INVALID-PARAMETERS)
+
+      ;; Apply decay if needed
+      (if (>= (- stacks-block-height (get last-decay profile)) DECAY-PERIOD)
+        (begin
+          (try! (apply-decay owner))
+          true
+        )
+        true
+      )
+
+      ;; Calculate new reputation
+      (let (
+          (current-profile (unwrap! (map-get? identities { owner: owner }) ERR-IDENTITY-NOT-FOUND))
+          (current-rep (get reputation current-profile))
+          (points (get points action-config))
+          (new-rep (if (< (+ current-rep points) MAX-REPUTATION)
+            (+ current-rep points)
+            MAX-REPUTATION
+          ))
+        )
+        (begin
+          (map-set identities { owner: owner }
+            (merge current-profile {
+              reputation: new-rep,
+              last-updated: stacks-block-height,
+            })
+          )
+          (ok new-rep)
+        )
+      )
+    )
+  )
+)
