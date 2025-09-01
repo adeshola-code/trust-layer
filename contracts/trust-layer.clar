@@ -151,3 +151,84 @@
     )
   )
 )
+
+;; Apply reputation decay
+(define-private (apply-decay (owner principal))
+  (let (
+      (profile (unwrap! (map-get? identities { owner: owner }) ERR-IDENTITY-NOT-FOUND))
+      (current-rep (get reputation profile))
+      (decay-amount (/ (* current-rep DECAY-RATE) u100))
+      (new-rep (if (> current-rep decay-amount)
+        (- current-rep decay-amount)
+        MIN-REPUTATION
+      ))
+    )
+    (begin
+      (map-set identities { owner: owner }
+        (merge profile {
+          reputation: new-rep,
+          last-updated: stacks-block-height,
+          last-decay: stacks-block-height,
+        })
+      )
+      (ok new-rep)
+    )
+  )
+)
+
+;; READ-ONLY FUNCTIONS
+(define-read-only (get-reputation (owner principal))
+  (match (map-get? identities { owner: owner })
+    profile (some (get reputation profile))
+    none
+  )
+)
+
+(define-read-only (get-profile (owner principal))
+  (map-get? identities { owner: owner })
+)
+
+(define-read-only (verify-threshold
+    (owner principal)
+    (threshold uint)
+  )
+  (match (map-get? identities { owner: owner })
+    profile (and (get active profile) (>= (get reputation profile) threshold))
+    false
+  )
+)
+
+(define-read-only (get-protocol-info)
+  {
+    max-reputation: MAX-REPUTATION,
+    default-reputation: DEFAULT-REPUTATION,
+    decay-rate: DECAY-RATE,
+    decay-period: DECAY-PERIOD,
+    total-users: (var-get total-users),
+    admin: (var-get admin),
+    active: (var-get active),
+  }
+)
+
+;; INITIALIZATION
+;; Bootstrap essential trust actions
+(map-set trust-actions { action: "lightning-channel" } {
+  points: u10,
+  active: true,
+})
+(map-set trust-actions { action: "governance-vote" } {
+  points: u5,
+  active: true,
+})
+(map-set trust-actions { action: "defi-interaction" } {
+  points: u15,
+  active: true,
+})
+(map-set trust-actions { action: "contract-deploy" } {
+  points: u20,
+  active: true,
+})
+(map-set trust-actions { action: "security-audit" } {
+  points: u25,
+  active: true,
+})
